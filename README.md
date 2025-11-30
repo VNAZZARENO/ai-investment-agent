@@ -585,16 +585,6 @@ This ensures the directory exists for scripts like `run_tickers.sh` while keepin
 
 ---
 
-## 📚 Documentation
-
-- **[Prompt Engineering Guide](prompts/README.md)** - Versioning, best practices, consistency
-- **[Agent Design Patterns](docs/AGENTS.md)** - How each agent works
-- **[Data Pipeline](docs/DATA.md)** - Multi-source fallback architecture
-- **[Memory System](docs/MEMORY.md)** - Ticker isolation and RAG patterns
-- **[Deployment Guide](docs/DEPLOYMENT.md)** - Azure, Docker, CI/CD
-
----
-
 ## ⚖️ License & Disclaimer
 
 **License:** MIT - Free for commercial and personal use
