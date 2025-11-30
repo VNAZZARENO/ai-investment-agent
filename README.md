@@ -611,6 +611,7 @@ This ensures the directory exists for scripts like `run_tickers.sh` while keepin
 
 **Inspiration:**
 - [Fareed Khan](https://levelup.gitconnected.com/building-a-deep-thinking-trading-system-with-multi-agentic-architecture-c13da7effd2d) - Multi-agent trading systems
+- [Clive Thompson](https://www.linkedin.com/in/clive-thompson-661997251) - just a smart value trader
 - Institutional research teams at hedge funds and investment banks
 - The open-source AI community making powerful tools accessible
 
