@@ -119,6 +119,9 @@ source .venv/bin/activate  # On macOS/Linux
 ### Run Your First Analysis
 
 ```bash
+# Make sure the right python env is active
+source .venv/bin/activate
+
 # Analyze a single ticker
 poetry run python -m src.main --ticker 0005.HK
 
@@ -370,6 +373,9 @@ src/
 ### Comprehensive Test Suite
 
 ```bash
+# Make sure the right python environment is active
+source .venv/bin/activate
+
 # Run all tests
 poetry run pytest tests/ -v
 
