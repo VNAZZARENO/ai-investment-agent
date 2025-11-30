@@ -187,7 +187,7 @@ class TestConfigDataclass:
         assert config.max_debate_rounds == 2
         assert config.max_risk_discuss_rounds == 1
         assert config.max_daily_trades == 5
-        assert config.api_timeout == 500
+        assert config.api_timeout == 300
         assert config.api_retry_attempts == 10
     
     @patch.dict(os.environ, {}, clear=True)
