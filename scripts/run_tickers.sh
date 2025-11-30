@@ -1,6 +1,6 @@
 #!/bin/bash
 # Batch ticker analysis script
-# Reads tickers from a file and analyzes each one sequentially
+# Reads tickers from scratch/sample_tickers.txt and analyzes each one sequentially
 
 set -euo pipefail
 
@@ -41,7 +41,7 @@ if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
     cat << 'EOF'
 Usage: ./scripts/run_tickers.sh [INPUT_FILE] [OUTPUT_FILE]
 
-Batch analyze multiple tickers from a file.
+Batch analyze multiple tickers from a file.  RUN FROM REPO ROOT DIRECTORY.
 
 ARGUMENTS:
     INPUT_FILE     File containing ticker symbols (default: scratch/sample_tickers.txt)
@@ -54,7 +54,7 @@ INPUT FILE FORMAT:
     NVDA
 
 EXAMPLES:
-    # Use defaults
+    # Use defaults (again, run from REPO ROOT)
     ./scripts/run_tickers.sh
 
     # Custom files
@@ -155,7 +155,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     
 done < "$INPUT_FILE"
 
-# Final summary
 echo ""
 echo "========================================"
 print_success "Batch analysis complete!"
