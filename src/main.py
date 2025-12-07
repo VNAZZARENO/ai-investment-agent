@@ -19,6 +19,7 @@ os.environ["GRPC_POLL_STRATEGY"] = "poll"
 import sys
 import asyncio
 import logging
+import structlog
 from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
@@ -33,7 +34,7 @@ from src.report_generator import QuietModeReporter
 # IMPORTANT: Don't import get_tracker here - it instantiates the singleton immediately
 # Import it lazily in functions that need it, after quiet mode is set
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 console = Console()
 
 

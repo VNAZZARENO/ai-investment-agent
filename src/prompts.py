@@ -821,7 +821,7 @@ STRICT BOUNDARIES - DO NOT analyze price charts, technicals, social media sentim
 
 **Leverage (2 pts)**:
 - **Standard**: D/E <0.8: 1 pt
-- **Sector Exception (Utilities, REITs, Shipping, Banks)**: D/E <2.0 allowed (Score as 1 pt)
+- **Sector Exception (Utilities, Shipping, Banks)**: D/E <2.0 allowed (Score as 1 pt)
 - NetDebt/EBITDA <2: 1 pt (If N/A, remove 1pt from denominator)
 
 **Liquidity (2 pts)**:
@@ -973,19 +973,7 @@ Different industries have fundamentally different financial structures. Apply th
 
 **Rationale**: Regulated entities have lower margins but stable cash flows. Higher leverage is industry norm due to capital-intensive infrastructure.
 
-### 3. REITs (Real Estate Investment Trusts)
-
-**Identification**: Business description includes "REIT", "real estate investment trust", or SEC filing indicates REIT structure
-
-**Adjustments**:
-- **D/E Ratio**: <1.5 acceptable (vs standard 0.8) = 1 pt
-- **Earnings Metrics**: Use FFO (Funds From Operations) or AFFO (Adjusted FFO) instead of Net Income if available
-  → FFO/Share growth >5% = 1 pt (replaces EPS growth)
-- **Cash Flow**: REITs must distribute 90% of income
-  → Dividend Yield >4% = 1 pt (replaces FCF Yield in scoring)
-- **Valuation**: P/FFO <15 (replaces P/E) = 1 pt
-
-**Rationale**: REITs have unique accounting (depreciation distorts earnings). FFO better reflects cash-generating ability. Leverage is structural due to real estate financing.
+### 3. REITs trigger PFIC reporting. Skip.
 
 ### 4. SHIPPING & CYCLICAL COMMODITIES
 
@@ -1112,7 +1100,7 @@ Step 5: Now populate DATA_BLOCK:
 Analyzing [TICKER] - [COMPANY NAME]
 
 ### --- START DATA_BLOCK ---
-SECTOR: [Banking / Utilities / REITs / Shipping/Commodities / Technology/Software / General/Diversified]
+SECTOR: [Banking / Utilities / Shipping/Commodities / Technology/Software / General/Diversified]
 SECTOR_ADJUSTMENTS: [Description of adjustments applied, or "None - standard thresholds applied"]
 RAW_HEALTH_SCORE: [X]/12
 ADJUSTED_HEALTH_SCORE: [X]% (based on [Y] available points)
@@ -1213,7 +1201,7 @@ PFIC_RISK: [LOW / MEDIUM / HIGH]
 **IBKR Accessibility**: [Status and notes]
 
 **PFIC Risk**: [Assessment]""",
-            metadata={"last_updated": "2025-12-07", "thesis_version": "6.0", "critical_output": "financial_score", "changes": "Version 6.3: Added comprehensive SECTOR-SPECIFIC ADJUSTMENTS section covering 5 key sectors (Banks, Utilities, REITs, Shipping/Commodities, Tech/Software) with industry-appropriate thresholds. Added SECTOR and SECTOR_ADJUSTMENTS fields to DATA_BLOCK."}
+            metadata={"last_updated": "2025-12-07", "thesis_version": "6.0", "critical_output": "financial_score", "changes": "Version 6.3.1: Removed REIT sector guidance (REITs trigger PFIC reporting and are incompatible with thesis). Sector-specific adjustments now cover Banks, Utilities, Shipping/Commodities, Tech/Software only."}
         )
         
         # ==========================================

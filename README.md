@@ -202,6 +202,10 @@ poetry run python -m src.main --ticker 0005.HK
 # Quick mode (faster, 1 debate round)
 poetry run python -m src.main --ticker 7203.T --quick
 
+# Run with real-time logging visible (unbuffered Python output)
+# Redirect to file and monitor with: tail -f scratch/ticker_analysis_info.txt
+poetry run python -u -m src.main --ticker 0005.HK >scratch/ticker_analysis_info.txt 2>&1 &
+
 # Batch analysis
 poetry run bash run_tickers.sh
 

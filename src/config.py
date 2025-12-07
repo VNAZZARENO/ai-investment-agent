@@ -58,19 +58,112 @@ def configure_langsmith_tracing() -> None:
             
         logger.info(f"LangSmith configured for project: {os.environ.get('LANGSMITH_PROJECT')}")
 
+def _parse_env_file() -> dict:
+    """Parse .env file to get explicitly set values (ignoring comments and blank lines)."""
+    env_file = Path(".env")
+    env_values = {}
+
+    if not env_file.exists():
+        return env_values
+
+    try:
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and blank lines
+                if not line or line.startswith('#'):
+                    continue
+                # Parse KEY=VALUE
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # Strip inline comments (everything after #)
+                    if '#' in value:
+                        value = value.split('#')[0].strip()
+                    # Remove quotes if present
+                    if value.startswith('"') and value.endswith('"'):
+                        value = value[1:-1]
+                    elif value.startswith("'") and value.endswith("'"):
+                        value = value[1:-1]
+                    # Store non-empty values
+                    if value:
+                        env_values[key] = value
+    except Exception as e:
+        logger.warning(f"Could not parse .env file: {e}")
+
+    return env_values
+
+def _check_env_overrides() -> None:
+    """Check for shell environment variable overrides that conflict with .env file."""
+    env_file_values = _parse_env_file()
+
+    # Critical variables to check (where override could cause performance issues)
+    critical_vars = {
+        'GEMINI_RPM_LIMIT': {
+            'name': 'GEMINI_RPM_LIMIT',
+            'description': 'Gemini API rate limit',
+            'comparison': 'higher'  # Shell override higher than .env is problematic
+        }
+    }
+
+    for var_key, var_info in critical_vars.items():
+        env_file_value = env_file_values.get(var_key)
+        shell_value = os.environ.get(var_key)
+
+        # Skip if not set in .env file
+        if not env_file_value:
+            continue
+
+        # Skip if shell value matches .env value
+        if shell_value == env_file_value:
+            continue
+
+        # Shell environment override detected
+        if shell_value:
+            try:
+                env_file_int = int(env_file_value)
+                shell_int = int(shell_value)
+
+                # Check if override is problematic
+                if var_info['comparison'] == 'higher' and shell_int > env_file_int:
+                    logger.warning(
+                        f"⚠️  SHELL ENVIRONMENT OVERRIDE DETECTED: {var_key}\n"
+                        f"    .env file setting:     {var_key}={env_file_int}\n"
+                        f"    Shell environment:     {var_key}={shell_int}\n"
+                        f"    USING: {shell_int} (from shell - this may cause rate limit errors!)\n"
+                        f"    \n"
+                        f"    If you have a free-tier API key ({env_file_int} RPM), using {shell_int} RPM\n"
+                        f"    will cause HTTP 429 errors and severe performance degradation.\n"
+                        f"    \n"
+                        f"    To fix: Run 'unset {var_key}' in your shell, or check ~/.bashrc, ~/.zshrc"
+                    )
+                elif shell_int != env_file_int:
+                    logger.info(
+                        f"Shell environment override: {var_key}={shell_int} (overrides .env value of {env_file_int})"
+                    )
+            except ValueError:
+                # Non-integer values
+                logger.info(
+                    f"Shell environment override: {var_key}={shell_value} (overrides .env value of {env_file_value})"
+                )
+
 def validate_environment_variables() -> None:
     """Validate required environment variables."""
     required_vars = ["GOOGLE_API_KEY", "FINNHUB_API_KEY", "TAVILY_API_KEY"]
-    
+
     # Check for EODHD key (Optional but recommended)
     if not _get_env_var("EODHD_API_KEY", required=False):
         logger.warning("EODHD_API_KEY missing - High quality international data will be disabled.")
 
     missing_vars = [var for var in required_vars if not _get_env_var(var, required=True)]
-    
+
     if missing_vars:
         raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
-    
+
+    # Check for problematic shell environment overrides
+    _check_env_overrides()
+
     configure_langsmith_tracing()
     logger.info("Environment variables validated")
 
