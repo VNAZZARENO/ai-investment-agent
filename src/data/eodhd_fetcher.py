@@ -82,10 +82,14 @@ class EODHDFetcher:
 
         try:
             async with self._session.get(url, params=params, timeout=10) as response:
-                
+
                 # --- Error Handling & Circuit Breaking ---
                 if response.status == 200:
-                    data = await response.json()
+                    try:
+                        data = await response.json()
+                    except (ValueError, aiohttp.ContentTypeError) as e:
+                        logger.debug(f"EODHD malformed JSON for {eod_symbol}: {e}")
+                        return None
                     return self._parse_fundamentals(data)
                 
                 elif response.status == 429:
@@ -113,7 +117,7 @@ class EODHDFetcher:
     def _parse_fundamentals(self, data: Dict) -> Dict[str, Optional[float]]:
         """Map EODHD JSON structure to internal schema."""
         output = {
-            'source': 'EODHD',
+            '_source': 'eodhd',
             # Core Valuation
             'marketCap': None, 
             'trailingPE': None, 

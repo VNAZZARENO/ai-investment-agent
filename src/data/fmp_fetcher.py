@@ -89,7 +89,11 @@ class FMPFetcher:
         try:
             async with self._session.get(url, params=params, timeout=10) as response:
                 if response.status == 200:
-                    data = await response.json()
+                    try:
+                        data = await response.json()
+                    except (ValueError, aiohttp.ContentTypeError) as e:
+                        logger.debug(f"FMP malformed JSON for {endpoint}: {e}")
+                        return None
                     self._key_validated = True
                     return data
                     
@@ -157,7 +161,7 @@ class FMPFetcher:
             'profit_margin': None,
             'free_cash_flow': None,
             'operating_cash_flow': None,
-            'source': 'FMP'
+            '_source': 'fmp'
         }
         
         # Fetch ratios endpoint (has P/E, P/B, PEG, current ratio, D/E, margins)
@@ -195,7 +199,7 @@ class FMPFetcher:
             result['eps_growth'] = g.get('growthEPS')
         
         # Log if we got no data at all
-        if all(v is None for k, v in result.items() if k != 'source'):
+        if all(v is None for k, v in result.items() if k != '_source'):
             logger.debug(f"FMP returned no data for {symbol}")
         
         return result

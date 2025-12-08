@@ -283,7 +283,7 @@ class TestGetFinancialMetrics:
         assert result['profit_margin'] == 0.25
         assert result['revenue_growth'] == 0.15
         assert result['eps_growth'] == 0.20
-        assert result['source'] == 'FMP'
+        assert result['_source'] == 'fmp'
     
     @pytest.mark.asyncio
     async def test_get_financial_metrics_partial_data(self):
@@ -313,11 +313,11 @@ class TestGetFinancialMetrics:
         
         result = await fetcher.get_financial_metrics('INVALID')
         
-        # All values should be None except source
+        # All values should be None except _source
         assert result['pe'] is None
         assert result['pb'] is None
         assert result['roe'] is None
-        assert result['source'] == 'FMP'
+        assert result['_source'] == 'fmp'
     
     @pytest.mark.asyncio
     async def test_get_financial_metrics_empty_arrays(self):
@@ -329,7 +329,7 @@ class TestGetFinancialMetrics:
         
         # Should handle empty arrays gracefully
         assert result['pe'] is None
-        assert result['source'] == 'FMP'
+        assert result['_source'] == 'fmp'
     
     @pytest.mark.asyncio
     async def test_get_financial_metrics_missing_fields(self):
@@ -379,7 +379,7 @@ class TestConvenienceFunction:
         # Create proper mock - is_available() is NOT async
         mock_fetcher = MagicMock()
         mock_fetcher.is_available = MagicMock(return_value=True)  # Regular mock, not async
-        mock_fetcher.get_financial_metrics = AsyncMock(return_value={'pe': 15.0, 'source': 'FMP'})
+        mock_fetcher.get_financial_metrics = AsyncMock(return_value={'pe': 15.0, '_source': 'fmp'})
         mock_fetcher.__aenter__ = AsyncMock(return_value=mock_fetcher)
         mock_fetcher.__aexit__ = AsyncMock(return_value=None)
         
@@ -411,29 +411,29 @@ class TestErrorScenarios:
     @pytest.mark.asyncio
     async def test_invalid_json_response(self):
         """Test handling of invalid JSON response.
-        
-        Note: Current implementation does NOT catch JSON parsing errors.
-        This test documents that the error propagates to the caller.
+
+        Updated: After malformed JSON handling was added, the error no longer
+        propagates - it returns None and logs at DEBUG level.
         """
         fetcher = FMPFetcher(api_key="test-key")
-        
+
         mock_response = MagicMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(side_effect=ValueError("Invalid JSON"))
-        
+
         # Create proper async context manager mock
         mock_cm = AsyncMock()
         mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
         mock_cm.__aexit__ = AsyncMock(return_value=None)
-        
+
         mock_session = MagicMock()
         mock_session.get = MagicMock(return_value=mock_cm)
-        
+
         fetcher._session = mock_session
-        
-        # Production code does NOT catch ValueError, so it should propagate
-        with pytest.raises(ValueError, match="Invalid JSON"):
-            await fetcher._get('ratios', {'symbol': 'AAPL'})
+
+        # Updated: With malformed JSON handling, it should return None gracefully
+        result = await fetcher._get('ratios', {'symbol': 'AAPL'})
+        assert result is None
     
     @pytest.mark.asyncio
     async def test_unexpected_response_structure(self):
@@ -447,4 +447,4 @@ class TestErrorScenarios:
         
         # Should handle gracefully and return all None
         assert result['pe'] is None
-        assert result['source'] == 'FMP'
+        assert result['_source'] == 'fmp'

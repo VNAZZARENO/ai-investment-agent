@@ -308,17 +308,19 @@ class TestRealMemoryOperations:
             assert initial_count == 2
             
             # Cleanup with days_to_keep=30 should NOT delete recent memories (SYNC!)
-            # Note: clear_old_memories is instance method
-            deleted = memory.clear_old_memories(days_to_keep=30)
-            assert deleted == 0, "Recent memories should not be deleted"
-            
+            # Note: clear_old_memories now returns Dict[str, int] mapping collection -> deleted count
+            deleted_dict = memory.clear_old_memories(days_to_keep=30)
+            total_deleted = sum(deleted_dict.values())
+            assert total_deleted == 0, "Recent memories should not be deleted"
+
             # Verify still there
             stats_after = memory.get_stats()
             assert stats_after.get("count", 0) == 2
-            
+
             # Cleanup with days_to_keep=0 should delete everything (SYNC!)
-            deleted = memory.clear_old_memories(days_to_keep=0)
-            assert deleted == 2, "Should delete all memories when days_to_keep=0"
+            deleted_dict = memory.clear_old_memories(days_to_keep=0)
+            total_deleted = sum(deleted_dict.values())
+            assert total_deleted == 2, "Should delete all memories when days_to_keep=0"
             
             # Verify deleted
             stats_final = memory.get_stats()

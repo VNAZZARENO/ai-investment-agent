@@ -1,12 +1,13 @@
 """
 Smart Multi-Source Data Fetcher with Unified Parallel Approach
+UPDATED: Integrated Alpha Vantage with circuit breaker for rate limit handling.
 UPDATED: Integrated EOD Historical Data (EODHD) for international coverage.
 FIXED: Smart Merge logic now correctly respects field-specific quality tags.
 
 Strategy:
-1. Launch ALL sources in parallel (yfinance, yahooquery, FMP, EODHD)
+1. Launch ALL sources in parallel (yfinance, yahooquery, FMP, EODHD, Alpha Vantage)
 2. Enhance yfinance with financial statement extraction
-3. Smart merge with quality scoring (Statements > EODHD > FMP > Yahoo Info)
+3. Smart merge with quality scoring (Statements > EODHD > Alpha Vantage/yfinance > FMP > Yahoo Info)
 4. Mandatory Tavily gap-fill if coverage <70%
 """
 
@@ -49,6 +50,13 @@ except ImportError:
     logger.warning("eodhd_not_available")
 
 try:
+    from src.data.alpha_vantage_fetcher import get_av_fetcher
+    ALPHA_VANTAGE_AVAILABLE = True
+except ImportError:
+    ALPHA_VANTAGE_AVAILABLE = False
+    logger.warning("alpha_vantage_not_available")
+
+try:
     from tavily import TavilyClient
     TAVILY_LIB_AVAILABLE = True
 except ImportError:
@@ -71,6 +79,7 @@ SOURCE_QUALITY = {
     'eodhd': 9.5,                   # Professional paid feed (High trust for Int'l)
     'yfinance': 9,                  # Standard feed
     'yfinance_info': 9,             # Standard feed
+    'alpha_vantage': 9,             # High-quality fundamentals (Int'l)
     'calculated': 8,                # Derived metrics
     'fmp': 7,                       # Good backup
     'fmp_info': 7,
@@ -232,20 +241,21 @@ class SmartMarketDataFetcher:
     def __init__(self):
         self.fx_cache = {}
         self.fx_cache_expiry_time = {}
-        
+
         self.fmp_fetcher = get_fmp_fetcher() if FMP_AVAILABLE else None
         self.eodhd_fetcher = get_eodhd_fetcher() if EODHD_AVAILABLE else None
+        self.av_fetcher = get_av_fetcher() if ALPHA_VANTAGE_AVAILABLE else None
         self.pattern_extractor = FinancialPatternExtractor()
-        
+
         api_key = os.environ.get("TAVILY_API_KEY")
         self.tavily_client = TavilyClient(api_key=api_key) if TAVILY_LIB_AVAILABLE and api_key else None
-        
+
         self.stats = {
             'fetches': 0,
             'basics_ok': 0,
             'basics_failed': 0,
             'avg_coverage': 0.0,
-            'sources': {'yfinance': 0, 'statements': 0, 'yahooquery': 0, 'fmp': 0, 'eodhd': 0, 'web_search': 0, 'calculated': 0},
+            'sources': {'yfinance': 0, 'statements': 0, 'yahooquery': 0, 'fmp': 0, 'eodhd': 0, 'alpha_vantage': 0, 'web_search': 0, 'calculated': 0},
             'gaps_filled': 0,
         }
     
@@ -485,7 +495,7 @@ class SmartMarketDataFetcher:
         
         try:
             fmp_data = await self.fmp_fetcher.get_financial_metrics(symbol)
-            if not fmp_data or all(v is None for k, v in fmp_data.items() if k != 'source'):
+            if not fmp_data or all(v is None for k, v in fmp_data.items() if k != '_source'):
                 return None
             
             mapped = {}
@@ -515,35 +525,64 @@ class SmartMarketDataFetcher:
         """
         if not EODHD_AVAILABLE or not self.eodhd_fetcher:
             return None
-        
+
         try:
             # Check circuit breaker before attempting
             if not self.eodhd_fetcher.is_available():
                 return None
-                
+
             data = await self.eodhd_fetcher.get_financial_metrics(symbol)
-            
+
             # If successful and contains data
-            if data and any(v is not None for k, v in data.items() if k != 'source'):
+            if data and any(v is not None for k, v in data.items() if k != '_source'):
                 self.stats['sources']['eodhd'] += 1
                 return data
-            
+
             # If data is None, fetcher might have hit rate limit (logged inside fetcher)
             return None
-            
+
         except Exception as e:
             logger.warning("eodhd_fetch_error", symbol=symbol, error=str(e))
+            return None
+
+    async def _fetch_av_fallback(self, symbol: str) -> Optional[Dict]:
+        """
+        Fallback: Alpha Vantage.
+        High-quality fundamentals with circuit breaker for rate limit handling.
+        Free tier: 25 requests/day, 5 requests/minute.
+        """
+        if not ALPHA_VANTAGE_AVAILABLE or not self.av_fetcher:
+            return None
+
+        try:
+            # Check circuit breaker before attempting
+            if not self.av_fetcher.is_available():
+                return None
+
+            data = await self.av_fetcher.get_financial_metrics(symbol)
+
+            # If successful and contains data
+            if data and any(v is not None for k, v in data.items() if not k.startswith('_')):
+                self.stats['sources']['alpha_vantage'] += 1
+                return data
+
+            # If data is None, fetcher might have hit rate limit (logged inside fetcher)
+            return None
+
+        except Exception as e:
+            logger.warning("alpha_vantage_fetch_error", symbol=symbol, error=str(e))
             return None
 
     async def _fetch_all_sources_parallel(self, symbol: str) -> Dict[str, Optional[Dict]]:
         """PHASE 1: Launch all data sources in parallel."""
         logger.info("launching_parallel_sources", symbol=symbol)
-        
+
         tasks = {
             'yfinance': self._fetch_yfinance_enhanced(symbol),
             'yahooquery': asyncio.to_thread(self._fetch_yahooquery_fallback, symbol),
             'fmp': self._fetch_fmp_fallback(symbol),
-            'eodhd': self._fetch_eodhd_fallback(symbol), # New source included
+            'eodhd': self._fetch_eodhd_fallback(symbol),
+            'alpha_vantage': self._fetch_av_fallback(symbol),
         }
         
         results = {}
@@ -568,17 +607,17 @@ class SmartMarketDataFetcher:
     def _smart_merge_with_quality(self, source_results: Dict[str, Optional[Dict]], symbol: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         PHASE 3: Intelligent merge with quality scoring.
-        Updated to include EODHD in the priority logic and field-specific override checks.
+        Updated to include EODHD and Alpha Vantage in the priority logic and field-specific override checks.
         """
         merged = {}
         field_sources = {}
         field_quality = {}
         sources_used = set()
         gaps_filled = 0
-        
+
         # Order of processing (lowest priority to highest priority if quality scores match)
         # Note: Actual precedence is determined by SOURCE_QUALITY dict
-        source_order = ['yahooquery', 'fmp', 'eodhd', 'yfinance']
+        source_order = ['yahooquery', 'fmp', 'alpha_vantage', 'eodhd', 'yfinance']
         
         for source_name in source_order:
             source_data = source_results.get(source_name)
