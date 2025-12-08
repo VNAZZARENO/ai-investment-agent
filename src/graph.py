@@ -26,7 +26,8 @@ from src.llms import create_quick_thinking_llm, create_deep_thinking_llm
 from src.toolkit import toolkit
 from src.token_tracker import TokenTrackingCallback, get_tracker
 from src.memory import (
-    create_memory_instances, cleanup_all_memories, FinancialSituationMemory
+    create_memory_instances, cleanup_all_memories, FinancialSituationMemory,
+    sanitize_ticker_for_collection
 )
 
 logger = structlog.get_logger(__name__)
@@ -193,15 +194,30 @@ def create_trading_graph(
             message="Creating ticker-specific memory collections"
         )
         memories = create_memory_instances(ticker)
-        
+
         # Extract specific memories for each agent
-        safe_ticker = ticker.replace(".", "_").replace("-", "_")
+        # CRITICAL: Must use same sanitization as create_memory_instances()
+        safe_ticker = sanitize_ticker_for_collection(ticker)
         bull_memory = memories.get(f"{safe_ticker}_bull_memory")
         bear_memory = memories.get(f"{safe_ticker}_bear_memory")
         invest_judge_memory = memories.get(f"{safe_ticker}_invest_judge_memory")
         trader_memory = memories.get(f"{safe_ticker}_trader_memory")
         risk_manager_memory = memories.get(f"{safe_ticker}_risk_manager_memory")
-        
+
+        # Verify all memories were successfully created
+        if not all([bull_memory, bear_memory, invest_judge_memory, trader_memory, risk_manager_memory]):
+            missing = []
+            if not bull_memory: missing.append("bull_memory")
+            if not bear_memory: missing.append("bear_memory")
+            if not invest_judge_memory: missing.append("invest_judge_memory")
+            if not trader_memory: missing.append("trader_memory")
+            if not risk_manager_memory: missing.append("risk_manager_memory")
+            raise ValueError(
+                f"Failed to create memory instances for ticker {ticker}. "
+                f"Missing: {', '.join(missing)}. "
+                f"Available keys: {list(memories.keys())}"
+            )
+
         logger.info(
             "ticker_memories_ready",
             ticker=ticker,
