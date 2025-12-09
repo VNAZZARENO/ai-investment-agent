@@ -229,10 +229,10 @@ GEMINI_RPM_LIMIT=1000  # Paid tier 2: 67x faster than free tier
 **Performance comparison:**
 
 - **Free tier (15 RPM):** ~1 analysis per 5-10 minutes
-- **Paid tier 1 (360 RPM):** ~24 analyses in the same time (24x speedup)
+- **Paid tier 1 (360 RPM):** ~24 analyses in the same time (24x speedup...theoretically)
 - **Paid tier 2 (1000 RPM):** ~67 analyses in the same time (67x speedup)
 
-The system applies a 20% safety margin automatically to prevent hitting API limits. For batch analysis of 300+ tickers, paid tiers can reduce runtime from 12-24 hours down to 30-60 minutes.
+The system applies a 20% safety margin automatically to prevent hitting API limits. For batch analysis of tickers, paid tiers can reduce runtime substantially.
 
 ### Batch Analysis - Screening Hundreds of Tickers
 
@@ -315,12 +315,11 @@ caffeinate -i ./scripts/run_tickers.sh
 
 - 50 tickers: ~2-4 hours (standard mode) or ~1-2 hours (quick mode)
 - 100 tickers: ~4-8 hours (standard mode) or ~2-4 hours (quick mode)
-- 300+ tickers: ~12-24 hours (standard mode) or ~6-12 hours (quick mode)
 
-Note that quick mode, if you configure with gemini-2.5-flash (see .env) yields low-quality results.
+Note that quick mode, if you configure with gemini-2.5-flash (see .env), yields low-quality results.
 
 **💡 Pro tip for macOS users:**
-The `caffeinate -i` command prevents your Mac from sleeping while the analysis runs. Without it, your laptop may sleep and pause the analysis.
+The `caffeinate -i` command prevents your Mac from sleeping because it think it's inactive.  (It may sleep for other reasons even with caffeinate.)
 
 #### Step 4: Review Results
 
@@ -341,13 +340,13 @@ echo "SELL: $(grep -c 'FINAL DECISION: SELL' scratch/ticker_analysis_results.md)
 
 #### What to Expect
 
-From a list of 300 candidates, you'll typically get:
+Versions of the codebase have varied in their strictness, but in general, from a list of 300 candidates, you'll typically get:
 
-- **BUY recommendations:** 5-15 stocks (highly selective GARP filter)
+- **BUY recommendations:** 5-15 stocks (selective GARP filter)
 - **HOLD recommendations:** 20-40 stocks (interesting but flawed)
 - **SELL recommendations:** 250+ stocks (thesis violations, poor fundamentals)
 
-The system is **intentionally conservative** - it's designed to find the best 2-3% of candidates, not to give you 100 "buys."
+The system is **intentionally conservative** - it's designed to find the best candidates, not to give you 100 "buys."
 
 ### Example Output Structure
 
