@@ -625,30 +625,37 @@ poetry run pytest --cov=src tests/
 
 ---
 
-## 🚢 Deployment (Experimental)
+## 🚢 Deployment (Educational Reference)
 
-### Docker "Support"
+### Docker Support (Modernized Dec 2025)
+
+Production-ready **multi-stage Dockerfile** (Poetry 2.x, non-root user, ~40% smaller images):
 
 ```bash
-# Build image
+# Build and run
 docker build -t trading-system .
+docker run --env-file .env trading-system --ticker 0005.HK --quick
 
-# Run analysis
-docker run -e GOOGLE_API_KEY=your_key trading-system --ticker 0005.HK
+# Or use docker-compose
+docker compose run --rm investment-agent --ticker 7203.T
 ```
+
+**Updates**: Fixed health checks for batch jobs, ChromaDB dependencies, security hardening. See `Dockerfile` for details.
 
 ### Azure Container Instances (Terraform)
 
-I roughed this out, so folks would have a sense of what to do:
+Reference implementation for cloud deployment (requires customization):
 
 ```bash
 cd terraform/
 terraform init
-terraform plan -var="google_api_key=your_key"
-terraform apply
+terraform plan -var="google_api_key=your_key"  # Review carefully
+terraform apply  # Only after validating plan
 ```
 
-**Note:** Docker and Terraform configurations are **experimental**. They provide a starting point for productionization but require customization for your use case.  They will not run correctly out of the box.  You can ask coding AIs (as of late 2025, Anthropic is best) to help you set up for your environment.
+**Recent fixes** (Dec 2025): Removed broken HTTP health checks (batch job doesn't need them), updated Gemini model names, added backend config example (commented). See `terraform/main.tf` for guidance.
+
+**Note:** Infrastructure configs are **educational examples**—they won't run out-of-the-box. Customize for your environment or ask coding AIs (Anthropic Claude works well, as of Dec 2025) for help. See `CLAUDE.md` for architecture details.
 
 ### GitHub Actions (CI/CD)
 

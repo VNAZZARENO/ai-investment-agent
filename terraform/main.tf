@@ -16,6 +16,25 @@ terraform {
       version = "~> 3.6"
     }
   }
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # OPTIONAL: Remote Backend Configuration
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Uncomment to store Terraform state in Azure Storage (recommended for teams)
+  #
+  # backend "azurerm" {
+  #   resource_group_name  = "terraform-state-rg"
+  #   storage_account_name = "tfstate<your-unique-id>"
+  #   container_name       = "tfstate"
+  #   key                  = "investment-agent.terraform.tfstate"
+  # }
+  #
+  # Setup instructions:
+  # 1. Create resource group: az group create -n terraform-state-rg -l eastus
+  # 2. Create storage account: az storage account create -n tfstate<id> -g terraform-state-rg
+  # 3. Create container: az storage container create -n tfstate --account-name tfstate<id>
+  # 4. Uncomment backend block above
+  # 5. Run: terraform init -migrate-state
 }
 
 provider "azurerm" {
@@ -216,37 +235,49 @@ resource "azurerm_container_group" "main" {
     cpu    = var.container_cpu
     memory = var.container_memory
 
-    # Enhanced health probe configuration
-    liveness_probe {
-      http_get {
-        path   = "/health"
-        port   = 8080
-        scheme = "Http"
-      }
-      initial_delay_seconds = 30
-      period_seconds        = 60
-      timeout_seconds       = 10
-      failure_threshold     = 3
-    }
+    # ═══════════════════════════════════════════════════════════════════════
+    # Health Probes - IMPORTANT NOTE FOR BATCH JOBS
+    # ═══════════════════════════════════════════════════════════════════════
+    # Azure Container Instances only support HTTP-based health checks.
+    # This application is a batch job (no HTTP server by default).
+    #
+    # OPTIONS:
+    # 1. Comment out health checks entirely (batch jobs don't need them)
+    # 2. Add a simple HTTP health endpoint using Flask/FastAPI
+    #
+    # COMMENTED OUT: Health checks disabled for batch job
+    # To enable, add HTTP endpoint to src/main.py and uncomment below:
+    #
+    # liveness_probe {
+    #   http_get {
+    #     path   = "/health"
+    #     port   = 8080
+    #     scheme = "Http"
+    #   }
+    #   initial_delay_seconds = 30
+    #   period_seconds        = 60
+    #   timeout_seconds       = 10
+    #   failure_threshold     = 3
+    # }
+    #
+    # readiness_probe {
+    #   http_get {
+    #     path   = "/ready"
+    #     port   = 8080
+    #     scheme = "Http"
+    #   }
+    #   initial_delay_seconds = 15
+    #   period_seconds        = 30
+    #   timeout_seconds       = 5
+    #   success_threshold     = 1
+    #   failure_threshold     = 3
+    # }
 
-    readiness_probe {
-      http_get {
-        path   = "/ready"
-        port   = 8080
-        scheme = "Http"
-      }
-      initial_delay_seconds = 15
-      period_seconds        = 30
-      timeout_seconds       = 5
-      success_threshold     = 1
-      failure_threshold     = 3
-    }
-
-    # Port configuration
-    ports {
-      port     = 8080
-      protocol = "TCP"
-    }
+    # Port configuration (only needed if adding HTTP endpoint)
+    # ports {
+    #   port     = 8080
+    #   protocol = "TCP"
+    # }
 
     # Application environment variables with enhanced configuration
     environment_variables = {
@@ -255,10 +286,11 @@ resource "azurerm_container_group" "main" {
       "DEFAULT_TICKER" = var.ticker_to_analyze
       "LOG_LEVEL"      = var.log_level
 
-      # Model configuration for Gemini
+      # Note: Model selection is hardcoded in src/llms.py
+      # These env vars are provided for documentation but currently ignored
       "LLM_PROVIDER" = "google"
-      "QUICK_MODEL"  = "gemini-2.5-flash"
-      "DEEP_MODEL"   = "gemini-3-pro-preview"
+      "QUICK_MODEL"  = "gemini-2.0-flash-exp"
+      "DEEP_MODEL"   = "gemini-2.0-flash-thinking-exp"
 
       # LangSmith configuration
       "LANGSMITH_TRACING" = "true"

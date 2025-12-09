@@ -14,20 +14,23 @@ services:
     
     # Or specify environment variables directly
     environment:
-      # Model configuration
-      - QUICK_MODEL=${QUICK_MODEL:-gpt-4o-mini}
-      - DEEP_MODEL=${DEEP_MODEL:-gpt-4o}
-      
+      # Note: Model selection is hardcoded in src/llms.py
+      # QUICK_MODEL and DEEP_MODEL env vars are ignored
+
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - STRUCTURED_LOGGING=true
-      
+
       # ChromaDB
       - ANONYMIZED_TELEMETRY=False
       - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
-      
+
       # LangSmith (optional)
       - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+
+      # Silence gRPC warnings (macOS)
+      - GRPC_VERBOSITY=ERROR
+      - GRPC_TRACE=
     
     # Volume mounts for persistence
     volumes:
@@ -59,6 +62,57 @@ services:
     # command: ["--ticker", "NVDA"]
     # command: ["--ticker", "TSLA", "--quick"]
 
+    # Network for potential observability stack
+    networks:
+      - agent-network
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # OPTIONAL: Prometheus - Metrics collection (commented out, not configured)
+  # ──────────────────────────────────────────────────────────────────────────
+  # Uncomment and configure monitoring/prometheus.yml to enable
+  #
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: investment-agent-prometheus
+  #   volumes:
+  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus-data:/prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   restart: unless-stopped
+  #   networks:
+  #     - agent-network
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # OPTIONAL: Grafana - Observability dashboards (commented out, not configured)
+  # ──────────────────────────────────────────────────────────────────────────
+  # Uncomment and configure monitoring/grafana/ to enable
+  #
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: investment-agent-grafana
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+  #   volumes:
+  #     - grafana-data:/var/lib/grafana
+  #   ports:
+  #     - "3000:3000"
+  #   restart: unless-stopped
+  #   networks:
+  #     - agent-network
+  #   depends_on:
+  #     - prometheus
+
 volumes:
   chroma-data:
     driver: local
+
+  # Uncomment if enabling observability stack
+  # prometheus-data:
+  #   driver: local
+  # grafana-data:
+  #   driver: local
+
+networks:
+  agent-network:
+    driver: bridge
