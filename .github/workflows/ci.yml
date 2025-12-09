@@ -30,7 +30,7 @@ jobs:
     
     - name: Run tests
       run: |
-        poetry run pytest tests/ -v --tb=short
+        poetry run pytest tests/ -v --tb=short -m "not integration"
       env:
         # Provide dummy keys for tests that need them
         GOOGLE_API_KEY: "test-key-for-ci"

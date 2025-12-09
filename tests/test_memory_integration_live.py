@@ -36,6 +36,7 @@ def restore_real_env():
     with patch.dict(os.environ, {"GOOGLE_API_KEY": _REAL_GOOGLE_API_KEY}):
         yield
 
+@pytest.mark.integration
 class TestRealTickerIsolation:
     """
     CRITICAL INTEGRATION TEST
@@ -240,6 +241,7 @@ class TestRealTickerIsolation:
             cleanup_all_memories(days=0, ticker="MSFT")
 
 
+@pytest.mark.integration
 class TestRealMemoryOperations:
     """Test actual memory operations with real ChromaDB."""
     
