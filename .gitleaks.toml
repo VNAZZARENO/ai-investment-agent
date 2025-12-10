@@ -1,0 +1,192 @@
+# GitLeaks Configuration for Investment Agent
+# https://github.com/gitleaks/gitleaks
+
+title = "Investment Agent GitLeaks Configuration"
+
+# ══════════════════════════════════════════════════════════════════════════
+# Global Settings
+# ══════════════════════════════════════════════════════════════════════════
+
+[extend]
+# Extend the default gitleaks configuration with custom rules
+# useDefault = false  # Uncomment to disable all default rules and use only custom ones
+useDefault = true
+
+# ══════════════════════════════════════════════════════════════════════════
+# Custom Rules - Add domain-specific secret patterns
+# ══════════════════════════════════════════════════════════════════════════
+
+# Google Gemini API Keys
+[[rules]]
+id = "google-gemini-api-key"
+description = "Google Gemini API Key"
+regex = '''AIzaSy[0-9A-Za-z_-]{33}'''
+keywords = ["AIzaSy"]
+tags = ["api-key", "google", "gemini"]
+
+# Tavily API Keys
+[[rules]]
+id = "tavily-api-key"
+description = "Tavily Search API Key"
+regex = '''tvly-[A-Za-z0-9]{32,64}'''
+keywords = ["tvly-"]
+tags = ["api-key", "tavily"]
+
+# Financial Modeling Prep API Keys
+[[rules]]
+id = "fmp-api-key"
+description = "Financial Modeling Prep API Key"
+# FMP keys are often numeric with underscores or plain alphanumeric
+regex = '''[0-9a-f]{32,64}'''
+keywords = ["fmp", "financialmodelingprep"]
+tags = ["api-key", "fmp"]
+# Note: This regex is broad - may need tuning based on actual FMP key format
+
+# EODHD API Keys
+[[rules]]
+id = "eodhd-api-key"
+description = "EODHD Financial Data API Key"
+regex = '''[0-9a-f]{24,64}'''
+keywords = ["eodhd", "eod"]
+tags = ["api-key", "eodhd"]
+
+# Finnhub API Keys
+[[rules]]
+id = "finnhub-api-key"
+description = "Finnhub Stock API Key"
+regex = '''[a-z0-9]{20,40}'''
+keywords = ["finnhub"]
+tags = ["api-key", "finnhub"]
+
+# LangSmith API Keys (for LangChain tracing)
+[[rules]]
+id = "langsmith-api-key"
+description = "LangSmith Tracing API Key"
+regex = '''ls__[a-zA-Z0-9]{32,64}'''
+keywords = ["ls__", "langsmith"]
+tags = ["api-key", "langsmith", "langchain"]
+
+# Generic high-entropy strings in environment variables
+[[rules]]
+id = "high-entropy-env-var"
+description = "High entropy string in environment variable assignment"
+regex = '''(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['""]?([a-zA-Z0-9_\-\.]{20,})['""]?'''
+entropy = 3.5  # Minimum Shannon entropy threshold
+tags = ["entropy", "env-var"]
+
+# ══════════════════════════════════════════════════════════════════════════
+# Allowlist - Files and paths to exclude from scanning
+# ══════════════════════════════════════════════════════════════════════════
+
+[allowlist]
+description = "Allowlisted files and patterns"
+
+# Ignore specific paths that commonly have false positives
+paths = [
+    # Test files with dummy/example keys
+    '''tests/.*''',
+    '''test_.*\.py''',
+    '''.*_test\.py''',
+
+    # Documentation and examples
+    '''docs/.*''',
+    '''examples/.*''',
+    '''README\.md''',
+    '''CLAUDE\.md''',
+
+    # Build artifacts and dependencies
+    '''\.venv/.*''',
+    '''node_modules/.*''',
+    '''venv/.*''',
+    '''__pycache__/.*''',
+    '''\.pytest_cache/.*''',
+    '''\.mypy_cache/.*''',
+
+    # Lock files and package metadata
+    '''poetry\.lock''',
+    '''package-lock\.json''',
+    '''yarn\.lock''',
+
+    # CI/CD workflows themselves (they reference secrets but don't contain them)
+    '''\.github/workflows/.*\.yml''',
+    '''\.github/workflows/.*\.yaml''',
+
+    # Scratch and temporary files
+    '''scratch/.*''',
+    '''tmp/.*''',
+    '''temp/.*''',
+
+    # ChromaDB persistence (vector embeddings, not secrets)
+    '''chroma_db/.*''',
+
+    # Result files (may contain tickers/data but not secrets)
+    '''results/.*\.json''',
+    '''results/.*\.md''',
+]
+
+# Ignore specific regexes (for known false positives)
+regexes = [
+    # Example API key formats used in documentation
+    '''sk-[A-Za-z0-9]{48}.*EXAMPLE''',
+    '''AIzaSy.*EXAMPLE''',
+
+    # Test fixtures and mock data
+    '''test-api-key''',
+    '''test-key-for-ci''',
+    '''dummy-key''',
+    '''fake-key''',
+    '''mock-key''',
+    '''example-key''',
+
+    # Git commit hashes (40 char hex strings, often flagged as secrets)
+    '''[a-f0-9]{40}''',
+
+    # Poetry package hashes in lock file
+    '''sha256:[a-f0-9]{64}''',
+]
+
+# Stop words - if these appear near a potential secret, it's likely a false positive
+stopwords = [
+    "example",
+    "test",
+    "dummy",
+    "fake",
+    "mock",
+    "sample",
+    "placeholder",
+    "your-api-key-here",
+    "insert-key-here",
+    "REPLACE_WITH_YOUR_KEY",
+]
+
+# ══════════════════════════════════════════════════════════════════════════
+# Allowlist for specific commits (to grandfather in pre-existing issues)
+# ══════════════════════════════════════════════════════════════════════════
+
+# If you have specific commits with false positives, add them here
+# commits = [
+#   "commit-sha-1",
+#   "commit-sha-2",
+# ]
+
+# ══════════════════════════════════════════════════════════════════════════
+# NOTES FOR FUTURE MAINTENANCE
+# ══════════════════════════════════════════════════════════════════════════
+# 1. When adding new API providers:
+#    - Add a [[rules]] section with the key pattern
+#    - Test with: gitleaks detect --config .gitleaks.toml --verbose
+#
+# 2. When you get false positives:
+#    - Option 1: Add to allowlist.regexes (if pattern-based)
+#    - Option 2: Add to allowlist.paths (if file-based)
+#    - Option 3: Add inline ignore comment: # gitleaks:allow
+#
+# 3. Testing this config locally:
+#    $ docker run --rm -v $(pwd):/repo ghcr.io/gitleaks/gitleaks:latest detect --source /repo --config /repo/.gitleaks.toml --verbose
+#
+# 4. To scan specific commits:
+#    $ gitleaks detect --config .gitleaks.toml --log-opts="<commit-range>"
+#
+# 5. To generate a baseline (accept current state):
+#    $ gitleaks detect --config .gitleaks.toml --baseline-path .gitleaks-baseline.json
+#    Then add to .gitignore: .gitleaks-baseline.json

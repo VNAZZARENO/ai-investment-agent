@@ -1,0 +1,227 @@
+# Dependabot Configuration
+# Automatically creates PRs to update dependencies with known vulnerabilities
+# Documentation: https://docs.github.com/en/code-security/dependabot
+
+version: 2
+updates:
+  # ══════════════════════════════════════════════════════════════════════════
+  # Python Dependencies (Poetry)
+  # Monitors: pyproject.toml, poetry.lock
+  # ══════════════════════════════════════════════════════════════════════════
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      # Check for updates weekly on Monday mornings
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Chicago"  # Adjust to your timezone
+
+    # Limit concurrent PRs to avoid overwhelming reviewers
+    open-pull-requests-limit: 10
+
+    # Auto-assign reviewers to dependency PRs
+    reviewers:
+      - "your-github-username"  # TODO: Replace with actual GitHub username
+
+    # Label PRs for easy filtering
+    labels:
+      - "dependencies"
+      - "security"
+      - "automated"
+
+    # Commit message prefix
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+    # Group related updates into single PRs to reduce noise
+    groups:
+      # Group all security patches together (highest priority)
+      security-patches:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+        # Only group if security update
+        filters:
+          - "security"
+        priority: 10
+
+      # Group minor version updates for LangChain ecosystem
+      langchain-ecosystem:
+        patterns:
+          - "langchain*"
+          - "langgraph*"
+          - "langsmith*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Group Google/Gemini related packages
+      google-ai:
+        patterns:
+          - "google-*"
+          - "langchain-google-*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Group data fetching libraries
+      data-providers:
+        patterns:
+          - "yfinance"
+          - "yahooquery"
+          - "finnhub-*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Group development dependencies (lower priority)
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+
+    # Automatically merge minor/patch updates for dev dependencies
+    # (Requires repository setting: "Allow auto-merge")
+    # Uncomment if you want auto-merge:
+    # allow:
+    #   - dependency-type: "development"
+    #     update-types:
+    #       - "patch"
+    #       - "minor"
+
+    # Ignore specific packages (if they cause breaking changes frequently)
+    # ignore:
+    #   - dependency-name: "package-name"
+    #     update-types: ["version-update:semver-major"]
+
+    # Increase pull request limit for security updates only
+    # (This overrides open-pull-requests-limit for security PRs)
+    # Note: This is a suggestion - Dependabot will prioritize security updates anyway
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # GitHub Actions
+  # Monitors: .github/workflows/*.yml
+  # Keeps GitHub Actions up to date with latest versions
+  # ══════════════════════════════════════════════════════════════════════════
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
+
+    open-pull-requests-limit: 5
+
+    reviewers:
+      - "your-github-username"  # TODO: Replace with actual GitHub username
+
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "automated"
+
+    commit-message:
+      prefix: "chore(ci)"
+
+    # Group all GitHub Actions updates together
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Docker (if you use Docker)
+  # Monitors: Dockerfile, docker-compose.yml
+  # Uncomment if you want Dependabot to track Docker base images
+  # ══════════════════════════════════════════════════════════════════════════
+  # - package-ecosystem: "docker"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #
+  #   labels:
+  #     - "dependencies"
+  #     - "docker"
+  #
+  #   reviewers:
+  #     - "your-github-username"
+
+# ══════════════════════════════════════════════════════════════════════════
+# Dependabot Security Updates (automatic)
+# ══════════════════════════════════════════════════════════════════════════
+# These are created automatically by Dependabot when vulnerabilities are detected.
+# No configuration needed - they override the schedule above.
+#
+# To enable:
+#   Settings → Code security and analysis → Dependabot security updates → Enable
+#
+# Security updates:
+#   - Created immediately when CVE is detected
+#   - Always target the minimum version that fixes the vulnerability
+#   - Get priority over scheduled updates
+#   - Automatically labeled with "security"
+#
+# ══════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════
+# Best Practices & Tips
+# ══════════════════════════════════════════════════════════════════════════
+#
+# 1. Review PRs promptly
+#    - Security updates: within 24 hours
+#    - Other updates: within 1 week
+#
+# 2. Test before merging
+#    - Automated tests run on all PRs (via GitHub Actions)
+#    - For major updates, test locally first
+#
+# 3. Group related updates
+#    - Reduces PR noise
+#    - Easier to review related changes together
+#
+# 4. Use auto-merge cautiously
+#    - Safe for: patch updates to dev dependencies
+#    - Risky for: major version updates, production dependencies
+#
+# 5. Monitor the Security tab
+#    - GitHub Security → Dependabot alerts
+#    - Shows all vulnerable dependencies
+#
+# 6. Keep poetry.lock in git
+#    - Allows Dependabot to see exact versions
+#    - Ensures reproducible builds
+#
+# 7. Set up branch protection
+#    - Require passing tests before merge
+#    - Prevents broken dependency updates from reaching main
+#
+# ══════════════════════════════════════════════════════════════════════════
+# Troubleshooting
+# ══════════════════════════════════════════════════════════════════════════
+#
+# Problem: Dependabot not creating PRs
+# Solution:
+#   - Check Settings → Code security → Dependabot alerts is enabled
+#   - Verify poetry.lock is committed to repository
+#   - Check Dependabot logs: Insights → Dependency graph → Dependabot
+#
+# Problem: Too many PRs
+# Solution:
+#   - Reduce open-pull-requests-limit
+#   - Use more aggressive grouping
+#   - Change interval to "monthly"
+#
+# Problem: PRs fail tests
+# Solution:
+#   - Lock problematic package: ignore in config
+#   - Fix tests to handle newer versions
+#   - Pin version in pyproject.toml temporarily
+#
+# ══════════════════════════════════════════════════════════════════════════
