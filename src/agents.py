@@ -213,7 +213,7 @@ def create_analyst_node(llm, agent_key: str, tools: List[Any], output_field: str
                 context=agent_prompt.agent_name
             )
             new_state = {"sender": agent_key, "messages": [response], "prompts_used": prompts_used}
-            
+
             # Check for tool calls
             has_tool_calls = False
             try:
@@ -222,10 +222,30 @@ def create_analyst_node(llm, agent_key: str, tools: List[Any], output_field: str
             except (AttributeError, TypeError):
                 pass
 
+            # Debug logging for analyst responses
+            content_len = len(response.content) if response.content else 0
+            logger.debug(
+                "analyst_response",
+                agent=agent_key,
+                has_tool_calls=has_tool_calls,
+                content_length=content_len,
+                content_preview=response.content[:200] if response.content and content_len > 0 else "(empty)"
+            )
+
             if has_tool_calls:
+                logger.info("analyst_calling_tools", agent=agent_key, num_tools=len(response.tool_calls))
                 return new_state
 
-            new_state[output_field] = response.content          
+            # Warn if content is suspiciously short (likely an issue)
+            if content_len < 50 and not has_tool_calls:
+                logger.warning(
+                    "analyst_short_response",
+                    agent=agent_key,
+                    content_length=content_len,
+                    content=response.content
+                )
+
+            new_state[output_field] = response.content
 
             if agent_key == "fundamentals_analyst":
                 logger.info("fundamentals_output", has_datablock="DATA_BLOCK" in response.content, length=len(response.content))

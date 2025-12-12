@@ -20,6 +20,11 @@ from typing import List, Dict, Tuple, Optional, Any
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+# Disable ChromaDB telemetry before importing
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY_ENABLED"] = "False"
+os.environ["POSTHOG_DISABLED"] = "True"
+
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from src.config import config
 

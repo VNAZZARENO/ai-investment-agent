@@ -1,24 +1,37 @@
 #!/usr/bin/env python3
 """
 Main entry point for the Multi-Agent Investment Analysis System.
-Updated for Gemini 3 (Nov 2025).
+Supports Google Gemini and Anthropic Claude LLM providers.
 """
 
 import argparse
 
 import os
 
-# Chroma telemetry is just a pain; need to catch this early
+# Disable ChromaDB/Posthog telemetry early (before any imports)
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 os.environ["CHROMA_TELEMETRY_ENABLED"] = "False"
+os.environ["POSTHOG_DISABLED"] = "True"
 
 # Suppress gRPC fork warnings; if gRPC skips fork handlers, so be it
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "1" # handle forks gracefully
 os.environ["GRPC_POLL_STRATEGY"] = "poll"
 
+# Suppress posthog logging errors (ChromaDB telemetry compatibility issue)
+import logging
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
+
+# Monkey-patch posthog to prevent ChromaDB telemetry errors
+# ChromaDB's posthog integration has API incompatibility with newer posthog versions
+try:
+    import posthog
+    # Replace capture with a no-op that accepts any arguments
+    posthog.capture = lambda *args, **kwargs: None
+except ImportError:
+    pass  # posthog not installed, no patching needed
+
 import sys
 import asyncio
-import logging
 import structlog
 from typing import Optional
 from rich.console import Console

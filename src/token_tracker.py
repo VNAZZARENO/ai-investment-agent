@@ -34,20 +34,46 @@ class TokenUsage:
 
         Updated for Dec 2025 pricing (sources: ai.google.dev/gemini-api/docs/pricing).
         """
-        # Gemini pricing (per 1M tokens) - PAID TIER RATES
-        # NOTE: These apply when billing is enabled on your GCP project
+        # LLM pricing (per 1M tokens)
         # IMPORTANT: Order matters! More specific models must come before general ones
         pricing = {
-            # Gemini 2.0 Flash variants (experimental - but PAID if billing enabled)
+            # ============================================================
+            # Claude/Anthropic Models (Dec 2025 pricing)
+            # ============================================================
+            "claude-opus-4-5": {
+                "prompt": 5.00,      # $5.00 per 1M input tokens
+                "completion": 25.00  # $25.00 per 1M output tokens
+            },
+            "claude-sonnet-4-5": {
+                "prompt": 3.00,      # $3.00 per 1M input tokens
+                "completion": 15.00  # $15.00 per 1M output tokens
+            },
+            "claude-haiku-4-5": {
+                "prompt": 1.00,      # $1.00 per 1M input tokens
+                "completion": 5.00   # $5.00 per 1M output tokens
+            },
+            # Legacy Claude models
+            "claude-sonnet-4": {
+                "prompt": 3.00,
+                "completion": 15.00
+            },
+            "claude-3-5-haiku": {
+                "prompt": 0.80,
+                "completion": 4.00
+            },
+            # ============================================================
+            # Gemini Models (Dec 2025 pricing)
+            # ============================================================
+            # Gemini 2.0 Flash variants
             "gemini-2.0-flash-thinking-exp": {
                 "prompt": 0.30,     # Paid tier: $0.30 per 1M input tokens
                 "completion": 2.50  # Paid tier: $2.50 per 1M output tokens
             },
             "gemini-2.0-flash-exp": {
-                "prompt": 0.30,     # Paid tier: $0.30 per 1M input tokens
-                "completion": 2.50  # Paid tier: $2.50 per 1M output tokens
+                "prompt": 0.30,
+                "completion": 2.50
             },
-            # Gemini 2.5 Flash variants (more specific must come first!)
+            # Gemini 2.5 Flash variants
             "gemini-2.5-flash-lite": {
                 "prompt": 0.10,     # $0.10 per 1M input tokens
                 "completion": 0.40  # $0.40 per 1M output tokens
@@ -62,8 +88,8 @@ class TokenUsage:
                 "completion": 12.00 # $12.00 per 1M output tokens
             },
             "gemini-3-pro": {
-                "prompt": 2.00,     # $2.00 per 1M input tokens (< 200k context)
-                "completion": 12.00 # $12.00 per 1M output tokens (< 200k context)
+                "prompt": 2.00,
+                "completion": 12.00
             },
         }
 
@@ -273,48 +299,77 @@ class TokenTrackingCallback(BaseCallbackHandler):
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         """Called when LLM completes a generation."""
-        # Extract token usage from response
-        # For Gemini API, usage_metadata is in the message, not llm_output
-        usage_metadata = {}
-        model_name = "unknown"
+        try:
+            # Extract token usage from response
+            # Supports both Gemini and Claude/Anthropic response formats
+            usage_metadata = {}
+            model_name = "unknown"
 
-        # Try to get usage from generations first (Gemini's structure)
-        if response.generations and len(response.generations) > 0:
-            first_generation_list = response.generations[0]
-            if first_generation_list and len(first_generation_list) > 0:
-                first_generation = first_generation_list[0]
+            # Try to get usage from generations first
+            if response.generations and len(response.generations) > 0:
+                first_generation_list = response.generations[0]
+                if first_generation_list and len(first_generation_list) > 0:
+                    first_generation = first_generation_list[0]
 
-                # Check if it's an AIMessage with usage_metadata
-                if hasattr(first_generation, 'message') and hasattr(first_generation.message, 'usage_metadata'):
-                    usage_metadata = first_generation.message.usage_metadata or {}
+                    # Check if it's an AIMessage with usage_metadata (Gemini)
+                    if hasattr(first_generation, 'message') and hasattr(first_generation.message, 'usage_metadata'):
+                        meta = first_generation.message.usage_metadata
+                        if meta:
+                            # Handle both dict and object attribute access
+                            if isinstance(meta, dict):
+                                usage_metadata = meta
+                            else:
+                                # Claude returns usage_metadata as an object with attributes
+                                usage_metadata = {
+                                    'input_tokens': getattr(meta, 'input_tokens', 0),
+                                    'output_tokens': getattr(meta, 'output_tokens', 0),
+                                }
 
-                # Get model name from generation_info or response_metadata
-                if hasattr(first_generation, 'generation_info'):
-                    model_name = first_generation.generation_info.get('model_name', 'unknown')
-                if model_name == 'unknown' and hasattr(first_generation, 'message'):
-                    if hasattr(first_generation.message, 'response_metadata'):
-                        model_name = first_generation.message.response_metadata.get('model_name', 'unknown')
+                    # Check response_metadata for Claude/Anthropic
+                    if hasattr(first_generation, 'message') and hasattr(first_generation.message, 'response_metadata'):
+                        resp_meta = first_generation.message.response_metadata
+                        if resp_meta and isinstance(resp_meta, dict):
+                            # Claude puts usage in response_metadata.usage
+                            if 'usage' in resp_meta:
+                                claude_usage = resp_meta['usage']
+                                if isinstance(claude_usage, dict):
+                                    usage_metadata = {
+                                        'input_tokens': claude_usage.get('input_tokens', 0),
+                                        'output_tokens': claude_usage.get('output_tokens', 0),
+                                    }
+                            # Get model name
+                            if model_name == "unknown":
+                                model_name = resp_meta.get('model', resp_meta.get('model_name', 'unknown'))
 
-        # Fallback to llm_output (for other LLM providers)
-        if not usage_metadata and response.llm_output:
-            usage_metadata = response.llm_output.get("usage_metadata", {})
-            if not usage_metadata:
-                # Fallback to deprecated token_usage field
-                usage_metadata = response.llm_output.get("token_usage", {})
-            if model_name == "unknown":
-                model_name = response.llm_output.get("model_name", "unknown")
+                    # Get model name from generation_info (Gemini)
+                    if model_name == "unknown" and hasattr(first_generation, 'generation_info'):
+                        gen_info = first_generation.generation_info
+                        if gen_info and isinstance(gen_info, dict):
+                            model_name = gen_info.get('model_name', 'unknown')
 
-        if usage_metadata:
-            prompt_tokens = usage_metadata.get("input_tokens", 0) or usage_metadata.get("prompt_tokens", 0)
-            completion_tokens = usage_metadata.get("output_tokens", 0) or usage_metadata.get("completion_tokens", 0)
+            # Fallback to llm_output (for other LLM providers)
+            if not usage_metadata and response.llm_output:
+                if isinstance(response.llm_output, dict):
+                    usage_metadata = response.llm_output.get("usage_metadata", {})
+                    if not usage_metadata:
+                        usage_metadata = response.llm_output.get("token_usage", {})
+                    if model_name == "unknown":
+                        model_name = response.llm_output.get("model_name", "unknown")
 
-            if prompt_tokens > 0 or completion_tokens > 0:
-                self.tracker.record_usage(
-                    agent_name=self.agent_name,
-                    model_name=model_name,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens
-                )
+            if usage_metadata:
+                prompt_tokens = usage_metadata.get("input_tokens", 0) or usage_metadata.get("prompt_tokens", 0)
+                completion_tokens = usage_metadata.get("output_tokens", 0) or usage_metadata.get("completion_tokens", 0)
+
+                if prompt_tokens > 0 or completion_tokens > 0:
+                    self.tracker.record_usage(
+                        agent_name=self.agent_name,
+                        model_name=model_name,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens
+                    )
+        except Exception as e:
+            # Don't let token tracking errors break the analysis
+            logger.debug(f"Token tracking error (non-fatal): {e}")
 
 
 # Global singleton instance (lazy initialization to respect quiet mode)
