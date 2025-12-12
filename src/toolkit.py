@@ -23,6 +23,7 @@ from src.enhanced_sentiment_toolkit import get_multilingual_sentiment_search
 from src.liquidity_calculation_tool import calculate_liquidity_metrics
 from src.stocktwits_api import StockTwitsAPI
 from src.data.fetcher import fetcher as market_data_fetcher
+from src.data.eodhd_fetcher import get_eodhd_fetcher
 
 logger = structlog.get_logger(__name__)
 stocktwits_api = StockTwitsAPI()
@@ -193,67 +194,85 @@ async def get_news(
     search_query: Annotated[str, "Specific query"] = None
 ) -> str:
     """
-    Get recent news using Tavily with ENHANCED multi-query strategy.
+    Get recent news using EODHD (primary) with Tavily fallback.
+    EODHD provides structured financial news with sentiment scores.
     Structures output for News Analyst prompt ingestion.
     """
-    if not tavily_tool: return "News tool unavailable."
-    
     try:
         normalized_symbol = normalize_ticker(ticker)
         ticker_obj = yf.Ticker(normalized_symbol)
         company_name = await extract_company_name_async(ticker_obj)
-        
-        # Local Domain Mapping
-        local_source_hints = {
-            ".KS": "site:pulsenews.co.kr OR site:koreatimes.co.kr OR site:koreaherald.com",
-            ".HK": "site:scmp.com OR site:thestandard.com.hk OR site:ejinsight.com",
-            ".T":  "site:japantimes.co.jp OR site:nikkei.com",
-            ".L":  "site:ft.com OR site:bbc.co.uk/news/business",
-            ".PA": "site:france24.com OR site:lemonde.fr",
-            ".DE": "site:dw.com OR site:handelsblatt.com",
-        }
-        
-        suffix = ""
-        if "." in normalized_symbol:
-            suffix = "." + normalized_symbol.split(".")[-1]
-        local_hint = local_source_hints.get(suffix, "")
-        
+
         results = []
-        
-        # 1. General Search - Use Clean Name
-        general_query = f'"{company_name}" {search_query}' if search_query else f'"{company_name}" (earnings OR merger OR acquisition OR regulatory)'
-        try:
-            general_result = await tavily_tool.ainvoke({"query": general_query})
-            if general_result:
-                # Sanitize and truncate output to prevent context overflow
-                sanitized = html.escape(str(general_result))
-                if len(sanitized) > 15000:
-                    sanitized = sanitized[:15000] + "... [truncated]"
-                results.append(f"=== GENERAL NEWS ===\n{sanitized}\n")
-        except Exception as e:
-            logger.warning(f"General news search failed: {e}")
-        
-        # 2. Local Search - Use Clean Name
-        if local_hint and not search_query:
-            local_query = f'"{company_name}" {local_hint} (earnings OR guidance OR strategy)'
+        eodhd_fetcher = get_eodhd_fetcher()
+
+        # =================================================================
+        # PRIMARY: EODHD News API (structured financial news with sentiment)
+        # =================================================================
+        if eodhd_fetcher.is_available():
             try:
-                local_result = await tavily_tool.ainvoke({"query": local_query})
-                if local_result:
-                    # Sanitize and truncate
-                    sanitized_local = html.escape(str(local_result))
-                    if len(sanitized_local) > 15000:
-                        sanitized_local = sanitized_local[:15000] + "... [truncated]"
-                    results.append(f"=== LOCAL/REGIONAL NEWS SOURCES ===\n{sanitized_local}\n")
+                articles = await eodhd_fetcher.get_news(
+                    symbol=normalized_symbol,
+                    limit=15,
+                    days_back=14
+                )
+                if articles:
+                    formatted = eodhd_fetcher.format_news_for_agent(articles, max_articles=10)
+                    results.append(f"=== EODHD FINANCIAL NEWS (with sentiment) ===\n{formatted}\n")
+                    logger.info(f"EODHD News: Found {len(articles)} articles for {normalized_symbol}")
             except Exception as e:
-                logger.warning(f"Local news search failed: {e}")
-                
+                logger.warning(f"EODHD news fetch failed: {e}")
+
+        # =================================================================
+        # FALLBACK: Tavily Web Search (if EODHD unavailable or no results)
+        # =================================================================
+        if not results and tavily_tool:
+            # Local Domain Mapping for international stocks
+            local_source_hints = {
+                ".KS": "site:pulsenews.co.kr OR site:koreatimes.co.kr OR site:koreaherald.com",
+                ".HK": "site:scmp.com OR site:thestandard.com.hk OR site:ejinsight.com",
+                ".T":  "site:japantimes.co.jp OR site:nikkei.com",
+                ".L":  "site:ft.com OR site:bbc.co.uk/news/business",
+                ".PA": "site:france24.com OR site:lemonde.fr",
+                ".DE": "site:dw.com OR site:handelsblatt.com",
+            }
+
+            suffix = ""
+            if "." in normalized_symbol:
+                suffix = "." + normalized_symbol.split(".")[-1]
+            local_hint = local_source_hints.get(suffix, "")
+
+            # General Search
+            general_query = f'"{company_name}" {search_query}' if search_query else f'"{company_name}" (earnings OR merger OR acquisition OR regulatory)'
+            try:
+                general_result = await tavily_tool.ainvoke({"query": general_query})
+                if general_result:
+                    sanitized = html.escape(str(general_result))
+                    if len(sanitized) > 15000:
+                        sanitized = sanitized[:15000] + "... [truncated]"
+                    results.append(f"=== GENERAL NEWS (Tavily) ===\n{sanitized}\n")
+            except Exception as e:
+                logger.warning(f"Tavily general news search failed: {e}")
+
+            # Local Search for international stocks
+            if local_hint and not search_query:
+                local_query = f'"{company_name}" {local_hint} (earnings OR guidance OR strategy)'
+                try:
+                    local_result = await tavily_tool.ainvoke({"query": local_query})
+                    if local_result:
+                        sanitized_local = html.escape(str(local_result))
+                        if len(sanitized_local) > 15000:
+                            sanitized_local = sanitized_local[:15000] + "... [truncated]"
+                        results.append(f"=== LOCAL/REGIONAL NEWS (Tavily) ===\n{sanitized_local}\n")
+                except Exception as e:
+                    logger.warning(f"Tavily local news search failed: {e}")
+
         if not results:
-            return f"No news found for {company_name}."
-            
+            return f"No news found for {company_name}. Neither EODHD nor Tavily returned results."
+
         return f"News Results for {company_name}:\n\n" + "\n".join(results)
     except Exception as e:
         logger.error(f"News fetch failed for {ticker}: {e}")
-        # Propagate error message instead of generic "No news found"
         return f"Error fetching news: {str(e)}"
 
 @tool

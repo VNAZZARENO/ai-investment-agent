@@ -4,6 +4,8 @@ High-quality, cost-effective fallback for international/ex-US equities.
 
 Handles:
 - Fundamentals (Valuation, Profitability, Growth)
+- Financial News API (ticker-specific and topic-based)
+- Sentiment Data API (aggregated sentiment scores)
 - Smart Ticker Normalization (YFinance -> EODHD format)
 - Rate Limit Circuit Breaking (stops requests after 429/402 errors)
 
@@ -16,7 +18,8 @@ Error Codes Handled (per EODHD Docs):
 import os
 import aiohttp
 import logging
-from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +209,231 @@ class EODHDFetcher:
             return float(value)
         except (ValueError, TypeError):
             return None
+
+    # =========================================================================
+    # NEWS API
+    # =========================================================================
+
+    async def _ensure_session(self):
+        """Ensure aiohttp session exists."""
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+
+    async def close(self):
+        """Close the aiohttp session."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def get_news(
+        self,
+        symbol: Optional[str] = None,
+        topic: Optional[str] = None,
+        limit: int = 10,
+        days_back: int = 7
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch financial news from EODHD.
+
+        Args:
+            symbol: Stock ticker (e.g., "AAPL" or "AAPL.US")
+            topic: Topic tag (e.g., "earnings", "merger", "ipo", "fed")
+            limit: Number of articles (1-1000, default 10)
+            days_back: How many days back to fetch (default 7)
+
+        Returns:
+            List of news articles with: date, title, content, link, symbols, tags, sentiment
+        """
+        if not self.is_available():
+            return []
+
+        await self._ensure_session()
+
+        # Build params
+        params = {
+            "api_token": self.api_key,
+            "fmt": "json",
+            "limit": min(limit, 1000),
+            "from": (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d"),
+            "to": datetime.now().strftime("%Y-%m-%d")
+        }
+
+        # Either symbol or topic required
+        if symbol:
+            params["s"] = self._normalize_ticker(symbol)
+        elif topic:
+            params["t"] = topic
+        else:
+            logger.warning("EODHD News: Either symbol or topic required")
+            return []
+
+        url = f"{self.base_url}/news"
+
+        try:
+            async with self._session.get(url, params=params, timeout=15) as response:
+                if response.status == 200:
+                    try:
+                        data = await response.json()
+                        return self._parse_news(data)
+                    except (ValueError, aiohttp.ContentTypeError) as e:
+                        logger.debug(f"EODHD News malformed JSON: {e}")
+                        return []
+
+                elif response.status == 429:
+                    logger.error("EODHD API Limit Exceeded (429). Disabling for this session.")
+                    self._is_exhausted = True
+                    return []
+
+                elif response.status == 402:
+                    logger.warning("EODHD Payment Required (402) for News API.")
+                    return []
+
+                else:
+                    logger.warning(f"EODHD News API error {response.status}")
+                    return []
+
+        except Exception as e:
+            logger.debug(f"EODHD News request failed: {e}")
+            return []
+
+    def _parse_news(self, data: List[Dict]) -> List[Dict[str, Any]]:
+        """Parse EODHD news response into standardized format."""
+        articles = []
+        for item in data:
+            try:
+                # Extract sentiment if available
+                sentiment_data = item.get('sentiment', {})
+                sentiment_score = None
+                if sentiment_data:
+                    # EODHD returns polarity from -1 to 1
+                    sentiment_score = sentiment_data.get('polarity')
+
+                articles.append({
+                    'date': item.get('date', ''),
+                    'title': item.get('title', ''),
+                    'content': item.get('content', '')[:2000],  # Truncate long content
+                    'link': item.get('link', ''),
+                    'symbols': item.get('symbols', []),
+                    'tags': item.get('tags', []),
+                    'sentiment_score': sentiment_score,
+                    'source': 'eodhd'
+                })
+            except Exception as e:
+                logger.debug(f"Error parsing news item: {e}")
+                continue
+
+        return articles
+
+    # =========================================================================
+    # SENTIMENT API
+    # =========================================================================
+
+    async def get_sentiment(
+        self,
+        symbols: List[str],
+        days_back: int = 30
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Fetch aggregated sentiment data for tickers.
+
+        Args:
+            symbols: List of ticker symbols
+            days_back: How many days back (default 30)
+
+        Returns:
+            Dict mapping symbol to list of daily sentiment records:
+            {
+                "AAPL.US": [
+                    {"date": "2024-01-15", "count": 25, "score": 0.42},
+                    ...
+                ]
+            }
+        """
+        if not self.is_available():
+            return {}
+
+        await self._ensure_session()
+
+        # Normalize and join symbols
+        normalized = [self._normalize_ticker(s) for s in symbols]
+        symbols_str = ",".join(normalized)
+
+        params = {
+            "api_token": self.api_key,
+            "s": symbols_str,
+            "from": (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d"),
+            "to": datetime.now().strftime("%Y-%m-%d")
+        }
+
+        url = f"{self.base_url}/sentiments"
+
+        try:
+            async with self._session.get(url, params=params, timeout=15) as response:
+                if response.status == 200:
+                    try:
+                        data = await response.json()
+                        return self._parse_sentiment(data)
+                    except (ValueError, aiohttp.ContentTypeError) as e:
+                        logger.debug(f"EODHD Sentiment malformed JSON: {e}")
+                        return {}
+
+                elif response.status == 429:
+                    logger.error("EODHD API Limit Exceeded (429).")
+                    self._is_exhausted = True
+                    return {}
+
+                else:
+                    logger.warning(f"EODHD Sentiment API error {response.status}")
+                    return {}
+
+        except Exception as e:
+            logger.debug(f"EODHD Sentiment request failed: {e}")
+            return {}
+
+    def _parse_sentiment(self, data: Dict) -> Dict[str, List[Dict[str, Any]]]:
+        """Parse EODHD sentiment response."""
+        result = {}
+        for symbol, records in data.items():
+            if isinstance(records, list):
+                result[symbol] = [
+                    {
+                        'date': r.get('date', ''),
+                        'count': r.get('count', 0),
+                        'score': r.get('normalized', 0)  # -1 to 1 scale
+                    }
+                    for r in records
+                ]
+        return result
+
+    def format_news_for_agent(self, articles: List[Dict[str, Any]], max_articles: int = 10) -> str:
+        """
+        Format news articles into a string suitable for LLM consumption.
+
+        Args:
+            articles: List of news articles from get_news()
+            max_articles: Maximum articles to include
+
+        Returns:
+            Formatted string with news summaries
+        """
+        if not articles:
+            return "No news articles found."
+
+        lines = []
+        for i, article in enumerate(articles[:max_articles], 1):
+            date = article.get('date', 'Unknown date')[:10]  # Just date part
+            title = article.get('title', 'No title')
+            content = article.get('content', '')[:500]  # First 500 chars
+            sentiment = article.get('sentiment_score')
+            sentiment_str = f" [Sentiment: {sentiment:.2f}]" if sentiment is not None else ""
+
+            lines.append(f"{i}. [{date}]{sentiment_str} {title}")
+            if content:
+                lines.append(f"   {content}...")
+            lines.append("")
+
+        return "\n".join(lines)
+
 
 # Singleton Pattern
 _eodhd_fetcher = None

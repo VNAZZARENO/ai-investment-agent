@@ -17,6 +17,8 @@ langchain-core = ">=1.0.0,<2.0.0"
 langchain-community = ">=0.2.0,<1.0.0"
 # REPLACED: langchain-openai -> langchain-google-genai
 langchain-google-genai = ">=2.0.0,<3.0.0"
+# ADDED: Anthropic/Claude support (alternative to Gemini)
+langchain-anthropic = ">=0.3.0,<1.0.0"
 # ADDED: Google GenAI SDK for direct access if needed
 google-genai = ">=1.0.0,<2.0.0"
 langgraph = ">=1.0.0,<2.0.0"
