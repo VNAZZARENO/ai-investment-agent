@@ -1,13 +1,14 @@
 """
 LLM configuration and initialization module.
-Updated for Google Gemini 3 with Safety Settings and Rate Limiting.
+Supports multiple providers: Google Gemini and Anthropic Claude.
 Includes token tracking for cost monitoring.
-UPDATED: Configurable rate limits via GEMINI_RPM_LIMIT environment variable.
+Provider selection via LLM_PROVIDER environment variable ("google" or "anthropic").
 """
 
 import logging
 from typing import Optional, List
 from langchain_google_genai import ChatGoogleGenerativeAI, HarmBlockThreshold, HarmCategory
+from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_core.callbacks import BaseCallbackHandler
@@ -93,6 +94,54 @@ def create_gemini_model(
     )
     return llm
 
+
+def create_claude_model(
+    model_name: str,
+    temperature: float,
+    timeout: int,
+    max_retries: int,
+    streaming: bool = False,
+    callbacks: Optional[List[BaseCallbackHandler]] = None
+) -> BaseChatModel:
+    """Generic factory for Claude/Anthropic models with optional callbacks."""
+
+    llm = ChatAnthropic(
+        model=model_name,
+        temperature=temperature,
+        timeout=float(timeout),
+        max_retries=max_retries,
+        streaming=streaming,
+        # Claude models have high token limits, set reasonable max for analysis
+        max_tokens=8192,
+        callbacks=callbacks or []
+    )
+    return llm
+
+
+def create_model(
+    model_name: str,
+    temperature: float,
+    timeout: int,
+    max_retries: int,
+    streaming: bool = False,
+    callbacks: Optional[List[BaseCallbackHandler]] = None
+) -> BaseChatModel:
+    """
+    Create LLM based on configured provider.
+
+    Uses LLM_PROVIDER from config to determine which backend to use:
+    - "google" (default): Google Gemini
+    - "anthropic": Anthropic Claude
+    """
+    if config.llm_provider == "anthropic":
+        return create_claude_model(
+            model_name, temperature, timeout, max_retries, streaming, callbacks
+        )
+    else:
+        return create_gemini_model(
+            model_name, temperature, timeout, max_retries, streaming, callbacks
+        )
+
 def create_quick_thinking_llm(
     temperature: float = 0.3,
     model: Optional[str] = None,
@@ -100,14 +149,19 @@ def create_quick_thinking_llm(
     max_retries: int = None, # Allow override or use config default
     callbacks: Optional[List[BaseCallbackHandler]] = None
 ) -> BaseChatModel:
-    """Create a quick thinking LLM (Gemini 2.5 Flash)."""
+    """
+    Create a quick thinking LLM.
+
+    Provider-aware: uses Gemini 2.5 Flash or Claude Haiku 4.5 based on LLM_PROVIDER.
+    """
     model_name = model or config.quick_think_llm
     # Use config defaults if not provided
     final_timeout = timeout if timeout is not None else config.api_timeout
     final_retries = max_retries if max_retries is not None else config.api_retry_attempts
 
-    logger.info(f"Initializing Quick LLM: {model_name} (timeout={final_timeout}, retries={final_retries})")
-    return create_gemini_model(model_name, temperature, final_timeout, final_retries, callbacks=callbacks)
+    logger.info(f"Initializing Quick LLM ({config.llm_provider}): {model_name} (timeout={final_timeout}, retries={final_retries})")
+    return create_model(model_name, temperature, final_timeout, final_retries, callbacks=callbacks)
+
 
 def create_deep_thinking_llm(
     temperature: float = 0.1,
@@ -116,14 +170,18 @@ def create_deep_thinking_llm(
     max_retries: int = None, # Allow override or use config default
     callbacks: Optional[List[BaseCallbackHandler]] = None
 ) -> BaseChatModel:
-    """Create a deep thinking LLM (Gemini 3 Pro)."""
+    """
+    Create a deep thinking LLM.
+
+    Provider-aware: uses Gemini 3 Pro or Claude Sonnet 4.5 based on LLM_PROVIDER.
+    """
     model_name = model or config.deep_think_llm
     # Use config defaults if not provided
     final_timeout = timeout if timeout is not None else config.api_timeout
     final_retries = max_retries if max_retries is not None else config.api_retry_attempts
 
-    logger.info(f"Initializing Deep LLM: {model_name} (timeout={final_timeout}, retries={final_retries})")
-    return create_gemini_model(model_name, temperature, final_timeout, final_retries, callbacks=callbacks)
+    logger.info(f"Initializing Deep LLM ({config.llm_provider}): {model_name} (timeout={final_timeout}, retries={final_retries})")
+    return create_model(model_name, temperature, final_timeout, final_retries, callbacks=callbacks)
 
 # Initialize default instances
 quick_thinking_llm = create_quick_thinking_llm()

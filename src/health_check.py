@@ -2,7 +2,7 @@
 """
 Health check script for container health monitoring.
 Tests core system components without running full analysis.
-Updated for Gemini 3 Migration (Nov 2025).
+Supports both Google Gemini and Anthropic Claude providers.
 
 Run with:  poetry run python src/health_check.py
 """
@@ -65,7 +65,7 @@ def check_python_version() -> Tuple[bool, List[str]]:
 
 
 def check_environment_variables() -> bool:
-    """Check if required environment variables are set for Gemini."""
+    """Check if required environment variables are set based on LLM provider."""
     env_file = repo_root / ".env"
     if env_file.exists():
         logger.info(f"Loading environment from {env_file}")
@@ -74,27 +74,38 @@ def check_environment_variables() -> bool:
             load_dotenv(env_file)
         except ImportError:
             logger.warning("python-dotenv not available, skipping .env file loading")
-    
-    # UPDATED: Check for Google API Key instead of OpenAI
+
+    llm_provider = os.environ.get("LLM_PROVIDER", "google")
+    logger.info(f"LLM Provider: {llm_provider}")
+
+    # Base required vars (always needed - GOOGLE_API_KEY for embeddings)
     required_vars = [
-        "GOOGLE_API_KEY", 
-        "FINNHUB_API_KEY", 
-        "TAVILY_API_KEY", 
+        "GOOGLE_API_KEY",
+        "FINNHUB_API_KEY",
     ]
+
+    # Optional but recommended
+    if not os.environ.get("TAVILY_API_KEY"):
+        logger.warning("TAVILY_API_KEY missing - News/web search will be disabled")
+
+    # Add provider-specific requirements
+    if llm_provider == "anthropic":
+        required_vars.append("ANTHROPIC_API_KEY")
+
     missing_vars = []
-    
+
     for var in required_vars:
         value = os.environ.get(var, "")
         if not value or value.strip() == "":
             missing_vars.append(var)
         else:
             logger.info(f"{var}: Present (✓)")
-    
+
     if missing_vars:
         logger.error(f"Missing environment variables: {missing_vars}")
         logger.info("Please copy .env.example to .env and add your API keys")
         return False
-    
+
     logger.info("All required environment variables are set")
     return True
 
@@ -110,8 +121,9 @@ def check_imports() -> bool:
         ("langchain_core", "langchain-core"),
         ("langchain", "langchain"),
         ("langgraph", "langgraph"),
-        # UPDATED: Check for Google GenAI instead of OpenAI
+        # LLM providers
         ("langchain_google_genai", "langchain-google-genai"),
+        ("langchain_anthropic", "langchain-anthropic"),
         ("google.genai", "google-genai"),
         ("yfinance", "yfinance"),
         ("finnhub", "finnhub-python")
@@ -136,39 +148,53 @@ def check_imports() -> bool:
     if critical_failures:
         logger.error(f"Critical import failures: {critical_failures}")
         return False
-    
+
     return True
 
 
 async def check_llm_connectivity() -> bool:
-    """Test basic LLM connectivity with Gemini."""
+    """Test basic LLM connectivity with configured provider (Gemini or Claude)."""
     try:
         from src.config import config
-        # UPDATED: Use ChatGoogleGenerativeAI
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        
-        logger.info(f"Testing Gemini connectivity with model: {config.quick_think_llm}")
-        
-        llm = ChatGoogleGenerativeAI(
-            model=config.quick_think_llm,
-            temperature=0,
-            timeout=10,
-            max_retries=1
-        )
-        
+
+        llm_provider = config.llm_provider
+        model_name = config.quick_think_llm
+
+        logger.info(f"Testing {llm_provider} connectivity with model: {model_name}")
+
+        if llm_provider == "anthropic":
+            from langchain_anthropic import ChatAnthropic
+            llm = ChatAnthropic(
+                model=model_name,
+                temperature=0,
+                timeout=10.0,
+                max_retries=1,
+                max_tokens=50
+            )
+            provider_name = "Claude"
+        else:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            llm = ChatGoogleGenerativeAI(
+                model=model_name,
+                temperature=0,
+                timeout=10,
+                max_retries=1
+            )
+            provider_name = "Gemini"
+
         response = await asyncio.wait_for(
             llm.ainvoke("Respond with just the word 'OK'."),
             timeout=15.0
         )
-        
+
         content = response.content.strip()
         if "OK" in content or "ok" in content.lower():
-            logger.info("Gemini LLM connectivity: OK (✓)")
+            logger.info(f"{provider_name} LLM connectivity: OK (✓)")
             return True
         else:
             logger.warning(f"LLM responded but unexpected content: {content}")
             return False
-            
+
     except asyncio.TimeoutError:
         logger.error("LLM connectivity: TIMEOUT (API too slow)")
         return False
@@ -182,7 +208,9 @@ async def check_llm_connectivity() -> bool:
 
 async def run_comprehensive_health_check() -> bool:
     """Run all health checks."""
-    logger.info("Starting Gemini System Health Check...")
+    llm_provider = os.environ.get("LLM_PROVIDER", "google")
+    provider_name = "Claude" if llm_provider == "anthropic" else "Gemini"
+    logger.info(f"Starting System Health Check ({provider_name})...")
     
     python_ok, _ = check_python_version()
     env_ok = check_environment_variables()

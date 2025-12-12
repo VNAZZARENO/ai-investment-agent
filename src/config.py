@@ -149,8 +149,22 @@ def _check_env_overrides() -> None:
                 )
 
 def validate_environment_variables() -> None:
-    """Validate required environment variables."""
-    required_vars = ["GOOGLE_API_KEY", "FINNHUB_API_KEY", "TAVILY_API_KEY"]
+    """Validate required environment variables based on LLM provider."""
+    llm_provider = os.environ.get("LLM_PROVIDER", "google")
+
+    # Base required vars (always needed)
+    required_vars = ["GOOGLE_API_KEY", "FINNHUB_API_KEY"]
+
+    # Check for Tavily key (Optional but recommended for news/web search)
+    if not _get_env_var("TAVILY_API_KEY", required=False):
+        logger.warning("TAVILY_API_KEY missing - News search and web fallback will be disabled.")
+
+    # If using Anthropic/Claude, also require ANTHROPIC_API_KEY
+    if llm_provider == "anthropic":
+        required_vars.append("ANTHROPIC_API_KEY")
+        logger.info("LLM Provider: Anthropic (Claude) - GOOGLE_API_KEY still required for embeddings")
+    else:
+        logger.info("LLM Provider: Google (Gemini)")
 
     # Check for EODHD key (Optional but recommended)
     if not _get_env_var("EODHD_API_KEY", required=False):
